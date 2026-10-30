@@ -1,0 +1,896 @@
+<!DOCTYPE html>
+<html lang="ca">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TOR — Portes Lògiques i Sigil 3D</title>
+    <meta name="description" content="TOR: Joc educatiu d'espionatge tàctic en 3D per aprendre portes lògiques (NOT, AND, OR, XOR, NAND, NOR i combinacionals) amb cons de visió de sentinelles i càmeres de seguretat al llarg de 10 sectors.">
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>⚡</text></svg>">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="css/styles.css?v=20261025_1652">
+</head>
+<body>
+
+    <!-- ====================================================================
+         ESCENARI 3D WEBGL (THREE.JS) I VIGNETTE DE VIGILÀNCIA / ALERTA
+         ==================================================================== -->
+    <div id="game-viewport"></div>
+    <div class="vignette-overlay" id="vignette-overlay"></div>
+
+    <!-- ====================================================================
+         BARRA SUPERIOR HUD TÀCTIC (MINIMALISTA I NET)
+         ==================================================================== -->
+    <header class="top-hud no-print">
+        <div class="hud-brand">
+            <div class="hud-crest">TOR</div>
+            <div class="hud-title-box">
+                <h1>TOR</h1>
+            </div>
+            <select id="hud-sector-select" class="hud-select-sector" onchange="jumpToMission(parseInt(this.value))" title="Canviar de Sector Militar"></select>
+            <span class="mission-gate-chip" id="mission-gate-chip">Porta NOT</span>
+            <span class="hud-coord-chip" id="hud-snake-coord-chip" title="Coordenada de quadrícula [Col:Row] i Àrea">
+                📍 <strong id="hud-snake-coord">C01:R15</strong> <span id="hud-snake-area" style="color:#94a3b8; font-size:0.72rem;">(ÀREA-SO)</span>
+            </span>
+        </div>
+
+        <!-- Estat de Snake (LIFE), Vigilància (Alerta) i Temps -->
+        <div class="hud-center">
+            <!-- LIFE Gauge de Solid Snake -->
+            <div class="hud-life-container" title="Vitalitat de Snake (LIFE)">
+                <span class="hud-life-label">LIFE</span>
+                <div class="hud-life-bar">
+                    <div id="hud-life-fill" class="hud-life-fill" style="width: 100%;"></div>
+                </div>
+            </div>
+
+            <!-- Alerta / Estat de Vigilància MGS -->
+            <div id="hud-alert-box" class="hud-alert-box alert-normal" title="Estat de Vigilància de la Base">
+                <span id="hud-alert-badge">NORMAL</span>
+                <span id="hud-alert-countdown">99.99</span>
+            </div>
+
+            <div class="timer-box" id="hud-timer-box" title="Temps Restant d'Infiltració">
+                <span class="timer-icon">⏳</span>
+                <div class="timer-digits" id="hud-timer-digits">50:00</div>
+            </div>
+        </div>
+
+        <!-- Botons d'Acció Tàctica Ràpida -->
+        <div class="hud-actions">
+            <button class="btn-hud" id="btn-toggle-perf" onclick="togglePerformanceMode()" title="Canviar qualitat gràfica (Chromebook / Gràfics Alts)" style="border-color:#38bdf8; color:#38bdf8;">
+                ⚡ Fluid (Chromebook)
+            </button>
+            <button class="btn-hud" id="btn-toggle-debug" onclick="toggleLiveDebugMode()" title="Activar/Desactivar visualització DEBUG en viu a l'escenari (F2)" style="border-color:#64748b; color:#94a3b8;">
+                🛠️ Debug: OFF [F2]
+            </button>
+            <button class="btn-hud" id="btn-open-editor" onclick="openLevelEditorModal()" title="Obrir Editor de Nivells (Tecla F4)" style="border-color:#f59e0b; color:#fbbf24;">
+                🗺️ Editor [F4]
+            </button>
+            <button class="btn-hud btn-hud-codec" onclick="openCurrentMissionCodec()" title="Obrir Ràdio Codec (Tecla C)">
+                📞 Codec [C]
+            </button>
+            <button class="btn-hud btn-hud-gold" onclick="openLibraryModal()" title="Obrir Llibreria de Portes Lògiques (Tecla L)">
+                📖 Llibreria [L]
+            </button>
+            <button class="btn-hud" id="btn-toggle-sound" onclick="handleToggleSound()" title="Activar/Desactivar efectes de so">
+                🔊 So On
+            </button>
+            <div class="hud-avatar-mini" onclick="openProfileModal()" title="Fitxa d'Agent FOXHOUND">
+                <span id="hud-student-avatar">🐍</span>
+            </div>
+        </div>
+    </header>
+
+    <!-- ====================================================================
+         BANNER TÀCTIC D'OBJECTIU ACTIU (MGS FLOATING HUD RIBBON)
+         ==================================================================== -->
+    <div class="hud-objective-strip no-print" id="hud-objective-strip">
+        <span class="tac-obj-badge">🎯 OBJECTIU</span>
+        <span class="tac-obj-text" id="hud-objective-text">Recull tots els Discs PAL (0 / 2) i arriba a la comporta de sortida [G]</span>
+    </div>
+
+    <!-- ====================================================================
+         PANELL ESQUERRE ULTRA-COMPACTE (SENSE TEXT RELLIGAT NI OBSTRUCIONS)
+         ==================================================================== -->
+    <aside class="mission-hud-panel compact-hud-card no-print">
+        <div class="objective-checklist">
+            <div class="obj-item" id="obj-crystals-item">
+                <span>💾 Discs PAL:</span>
+                <strong id="obj-crystals-count">0 / 2</strong>
+            </div>
+            <div class="obj-item" id="obj-door-item">
+                <span>🚪 Comporta:</span>
+                <strong id="obj-door-status">Bloquejada 🔒</strong>
+            </div>
+        </div>
+    </aside>
+
+    <!-- Botons d'Interacció Contextuals (Flotants a la part inferior) -->
+    <div class="tactical-actions-overlay no-print" id="tactical-actions-overlay">
+        <button class="btn-open-gate-prompt btn-tactical-action" id="btn-open-gate-prompt" onclick="openGatePuzzleModal()">
+            🔓 Piratar Terminal Lògic i Obrir Comporta [E]
+        </button>
+        <button class="btn-open-gate-prompt btn-tactical-action" id="btn-hack-pc-prompt" onclick="engine3D && engine3D.tryInteract()" style="background: linear-gradient(135deg, #0369a1, #0284c7); border-color: #38bdf8; display: none;">
+            💻 Hackejar Terminal PC (Desactivar Càmeres CCTV +30s) [E]
+        </button>
+        <button class="btn-open-gate-prompt btn-tactical-action" id="btn-door-prompt" onclick="engine3D && engine3D.tryInteract()" style="background: linear-gradient(135deg, #0d9488, #14b8a6); border-color: #2dd4bf; display: none;">
+            🚪 Obrir / Tancar Porta [E]
+        </button>
+        <button class="btn-open-gate-prompt btn-tactical-action" id="btn-switch-prompt" onclick="engine3D && engine3D.tryInteract()" style="background: linear-gradient(135deg, #b45309, #d97706); border-color: #fde047; display: none;">
+            ⚡ Accionar Polsador de Seguretat [E]
+        </button>
+    </div>
+
+    <!-- ====================================================================
+         PANELL DRET: SOLITON RADAR TÀCTIC (MINIMAPA MGS AMB CONS DE VISIÓ)
+         ==================================================================== -->
+    <aside class="minimap-panel no-print">
+        <div class="minimap-header">
+            <span>📡 Soliton Radar</span>
+            <span style="color:#22c55e; font-weight:800;">LIVE</span>
+        </div>
+        <canvas id="minimap-canvas" width="150" height="150"></canvas>
+        <div class="minimap-legend">
+            <div><span class="legend-dot" style="background:#22c55e;"></span>Snake</div>
+            <div><span class="legend-dot" style="background:#38bdf8;"></span>Disc PAL</div>
+            <div><span class="legend-dot" style="background:#ef4444;"></span>Sentinella</div>
+            <div><span class="legend-dot" style="background:#ff0055; border-radius: 2px;"></span>Dron Aeri</div>
+            <div><span class="legend-dot" style="background:#0284c7;"></span>Càmera</div>
+            <div><span class="legend-dot" style="background:#3b82f6;"></span>Caixa</div>
+            <div><span class="legend-dot" style="background:#f59e0b;"></span>Porta</div>
+        </div>
+    </aside>
+
+    <!-- ====================================================================
+         CONTROLS TÀCTILS D-PAD I BOTÓ DE SALT EN PANTALLA
+         ==================================================================== -->
+    <div class="dpad-container no-print">
+        <div></div>
+        <button class="dpad-btn"
+            onpointerdown="engine3D && engine3D.setDirectionKey('up', true)"
+            onpointerup="engine3D && engine3D.setDirectionKey('up', false)"
+            onpointerleave="engine3D && engine3D.setDirectionKey('up', false)"
+            title="Avançar (W / Fletxa Amunt)">▲</button>
+        <div></div>
+        <button class="dpad-btn"
+            onpointerdown="engine3D && engine3D.setDirectionKey('left', true)"
+            onpointerup="engine3D && engine3D.setDirectionKey('left', false)"
+            onpointerleave="engine3D && engine3D.setDirectionKey('left', false)"
+            title="Moure esquerra (A / Fletxa Esquerra)">◀</button>
+        <button class="dpad-btn action-center" onclick="openGatePuzzleModal()" title="Piratejar terminal [E]">XIP</button>
+        <button class="dpad-btn"
+            onpointerdown="engine3D && engine3D.setDirectionKey('right', true)"
+            onpointerup="engine3D && engine3D.setDirectionKey('right', false)"
+            onpointerleave="engine3D && engine3D.setDirectionKey('right', false)"
+            title="Moure dreta (D / Fletxa Dreta)">▶</button>
+        <div></div>
+        <button class="dpad-btn"
+            onpointerdown="engine3D && engine3D.setDirectionKey('down', true)"
+            onpointerup="engine3D && engine3D.setDirectionKey('down', false)"
+            onpointerleave="engine3D && engine3D.setDirectionKey('down', false)"
+            title="Retrocedir (S / Fletxa Avall)">▼</button>
+        <div></div>
+    </div>
+
+    <!-- ====================================================================
+         BARRA INFERIOR: PROGRÉS DELS 10 SECTORS MILITARS
+         ==================================================================== -->
+    <footer class="bottom-hud no-print">
+        <div class="missions-stepper" id="missions-stepper"></div>
+        <div class="controls-hint">
+            <span>Moviment: <span class="key-cap">W</span><span class="key-cap">A</span><span class="key-cap">S</span><span class="key-cap">D</span></span>
+            <span>Interacció / Polsadors: <span class="key-cap">E</span></span>
+            <span>Codec: <span class="key-cap">C</span></span>
+            <span>Dossier: <span class="key-cap">H</span></span>
+            <span>Llibreria: <span class="key-cap">L</span></span>
+        </div>
+    </footer>
+
+    <!-- Notificacions / Toasts en pantalla -->
+    <div id="castle-toast" class="castle-toast no-print"></div>
+
+    <!-- ====================================================================
+         MODAL 1: FITXA D'AGENT FOXHOUND (NOM I CURS)
+         ==================================================================== -->
+    <div class="modal-overlay no-print" id="profile-modal">
+        <div class="modal-card">
+            <div style="text-align:center; margin-bottom:1.15rem;">
+                <div style="font-size:3rem; margin-bottom:0.35rem;">🎖️</div>
+                <h2 class="modal-header-title">Fitxa d'Identificació FOXHOUND</h2>
+                <p class="modal-subtitle" style="margin-bottom:0.5rem;">
+                    Introdueix les teves dades d'operador/a per registrar la missió d'espionatge i generar el Diploma d'Aprofitament Tecnològic:
+                </p>
+            </div>
+
+            <div>
+                <label class="form-label" for="input-student-name">Nom i Cognoms de l'Agent:</label>
+                <input type="text" id="input-student-name" class="form-input" placeholder="Ex: Marc Rovira Vila" autocomplete="name">
+
+                <label class="form-label" for="input-student-group">Curs / Destinació:</label>
+                <select id="input-student-group" class="form-input" style="cursor:pointer;">
+                    <option value="1r ESO A">1r ESO A</option>
+                    <option value="1r ESO B">1r ESO B</option>
+                    <option value="1r ESO C">1r ESO C</option>
+                    <option value="2n ESO A">2n ESO A</option>
+                    <option value="2n ESO B">2n ESO B</option>
+                    <option value="2n ESO C">2n ESO C</option>
+                    <option value="3r ESO A">3r ESO A</option>
+                    <option value="3r ESO B">3r ESO B</option>
+                    <option value="3r ESO C">3r ESO C</option>
+                    <option value="4t ESO A">4t ESO A</option>
+                    <option value="4t ESO B">4t ESO B</option>
+                    <option value="4t ESO C">4t ESO C</option>
+                    <option value="1r Batxillerat">1r Batxillerat</option>
+                    <option value="2n Batxillerat">2n Batxillerat</option>
+                    <option value="Grup A">Grup A</option>
+                    <option value="Grup B">Grup B</option>
+                </select>
+
+                <label class="form-label">Especialitat Tàctica:</label>
+                <div class="avatar-grid">
+                    <div class="avatar-option selected" data-avatar="🐍" onclick="selectProfileAvatar('🐍')">
+                        <span class="av-emoji">🐍</span>
+                        <span class="av-name">Snake</span>
+                    </div>
+                    <div class="avatar-option" data-avatar="🕶️" onclick="selectProfileAvatar('🕶️')">
+                        <span class="av-emoji">🕶️</span>
+                        <span class="av-name">Infiltrador</span>
+                    </div>
+                    <div class="avatar-option" data-avatar="⚡" onclick="selectProfileAvatar('⚡')">
+                        <span class="av-emoji">⚡</span>
+                        <span class="av-name">Ciber-Enginyer</span>
+                    </div>
+                    <div class="avatar-option" data-avatar="🎯" onclick="selectProfileAvatar('🎯')">
+                        <span class="av-emoji">🎯</span>
+                        <span class="av-name">Franctirador</span>
+                    </div>
+                </div>
+
+                <button class="btn-primary-gold" style="width:100%;" onclick="saveStudentProfile()">
+                    Començar Infiltració Tàctica (50:00) ➔
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ====================================================================
+         MODAL 2: RÀDIO CODEC INTERACTIVA (ESTIL METAL GEAR SOLID)
+         ==================================================================== -->
+    <div class="modal-overlay no-print" id="codec-modal">
+        <div class="codec-frame">
+            <div class="codec-crt-lines"></div>
+
+            <div class="codec-header">
+                <div class="codec-freq-box">
+                    <span>MEMORY</span>
+                    <strong id="codec-freq-display">140.85</strong>
+                </div>
+                <div class="codec-title-bar">
+                    TRANSMISSIÓ RÀDIO CODEC · CANAL SEGUR
+                </div>
+                <div class="codec-freq-box">
+                    <span>SECTOR</span>
+                    <strong id="codec-page-counter">1 / 3</strong>
+                </div>
+            </div>
+
+            <div class="codec-body">
+                <div class="codec-portrait-wrap">
+                    <img id="codec-speaker-img" src="assets/codec_coronel.jpg" alt="Interlocutor Codec" class="codec-portrait">
+                    <div class="codec-speaker-badge" id="codec-speaker-name">CAMPBELL</div>
+                </div>
+
+                <div class="codec-dialogue-box">
+                    <div class="codec-gate-dossier" id="codec-gate-dossier" style="margin-bottom:0.75rem; background:rgba(6, 78, 59, 0.45); border:1px solid #10b981; border-radius:6px; padding:0.45rem 0.75rem; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.5rem;">
+                        <div style="display:flex; align-items:center; gap:0.6rem;">
+                            <span style="background:#10b981; color:#064e3b; font-weight:800; font-size:0.72rem; padding:0.2rem 0.5rem; border-radius:4px; font-family:'JetBrains Mono', monospace;" id="codec-gate-chip">PORTA NOT</span>
+                            <strong style="color:#6ee7b7; font-size:0.88rem; font-family:'JetBrains Mono', monospace;" id="codec-gate-formula">Y = ¬A</strong>
+                        </div>
+                        <span style="font-size:0.75rem; color:#a7f3d0;" id="codec-gate-rule">Inversor lògic: Inverteix el senyal binari (0 → 1 | 1 → 0)</span>
+                    </div>
+                    <p id="codec-dialogue-text" class="codec-dialogue-text">
+                        Snake, respon! Has arribat a la base Shadow Circuit. Recorda que cada comporta està bloquejada per un circuit de portes lògiques!
+                    </p>
+                    <div class="codec-actions">
+                        <button class="btn-codec btn-codec-skip" onclick="closeCodecModal()" title="Tancar transmissió (Esc)">Ometre [Esc]</button>
+                        <button class="btn-codec btn-codec-next" onclick="nextCodecStep()" title="Següent línia de diàleg (Espai)">Següent [Espai] ➔</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ====================================================================
+         MODAL 3: DOSSIER D'HISTÒRIA I MISSIONS AMB IL·LUSTRACIONS
+         ==================================================================== -->
+    <div class="modal-overlay no-print" id="story-modal">
+        <div class="modal-card wide story-card">
+            <button class="modal-close-btn" onclick="closeStoryModal()" title="Tancar">✕</button>
+
+            <div class="story-layout">
+                <div class="story-img-wrap">
+                    <img id="story-slide-img" src="assets/story_01.jpg" alt="Il·lustració d'operació tàctica" class="story-img">
+                    <div class="story-counter-badge" id="story-slide-counter">Informe 1 de 5</div>
+                </div>
+
+                <div class="story-content-wrap">
+                    <div class="theory-header-badge" id="story-slide-sub">Instal·lació Militar d'Eliminació Nuclear</div>
+                    <h2 class="story-title" id="story-slide-title">Fase 1: La Base Àrtica Shadow Circuit</h2>
+                    <p class="story-text" id="story-slide-text">
+                        En un arxipèlag aïllat de l'Àrtic, la base secreta 'Shadow Circuit' ha estat assaltada i ocupada per un escamot de forces especials rebels liderat pel Comandant Voss.
+                    </p>
+
+                    <div class="story-nav-bar">
+                        <button class="btn-hud" onclick="prevStorySlide()">◀ Anterior</button>
+                        <button class="btn-primary-gold" onclick="nextStorySlide()">Següent Informe ➔</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ====================================================================
+         MODAL 4: LLIBRERIA DE PORTES LÒGIQUES DE CONSULTA (GRIMORI DIGITAL)
+         ==================================================================== -->
+    <div class="modal-overlay no-print" id="library-modal">
+        <div class="modal-card xl">
+            <button class="modal-close-btn" onclick="closeLibraryModal()" title="Tancar Llibreria">✕</button>
+            <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:0.75rem; padding-right:2.5rem;">
+                <div>
+                    <h2 class="modal-header-title" style="margin-bottom:0.2rem;">📖 Llibreria Tàctica de Portes Lògiques</h2>
+                    <p style="font-size:0.86rem; color:#94a3b8;">
+                        Manual de consulta ràpida amb símbols normalitzats, fórmules booleanes, taules de veritat (IN → OUT) i simulador interactiu en viu.
+                    </p>
+                </div>
+                <button class="btn-primary-gold" style="padding:0.55rem 1.15rem; font-size:0.88rem;" onclick="closeLibraryModal()">
+                    Tornar a la Missió ➔
+                </button>
+            </div>
+
+            <div class="library-grid" id="library-cards-grid">
+                <!-- Generat dinàmicament per renderLibraryModalCards() -->
+            </div>
+        </div>
+    </div>
+
+    <!-- ====================================================================
+         MODAL 5: PANY LÒGIC DEL TERMINAL (TEORIA TAULA IN/OUT + BYPASS)
+         ==================================================================== -->
+    <div class="modal-overlay no-print" id="gate-puzzle-modal">
+        <div class="modal-card wide">
+            <button class="modal-close-btn" onclick="closeGatePuzzleModal()" title="Tancar i tornar al sector">✕</button>
+
+            <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:0.75rem; padding-right:2.5rem;">
+                <h2 class="modal-header-title" id="puzzle-modal-title" style="margin-bottom:0;">
+                    Sector 01 — Terminal de Seguretat
+                </h2>
+                <button class="btn-hud btn-hud-gold" onclick="openLibraryModal()">
+                    📖 Obrir Llibreria de Consulta
+                </button>
+            </div>
+
+            <div class="puzzle-layout">
+                <!-- ESQUERRA: PART TEÒRICA I TAULA DE VERITAT IN -> OUT -->
+                <div class="theory-panel">
+                    <div class="theory-header-badge" id="puzzle-theory-badge">📘 Protocol de Xifratge</div>
+                    <h3 style="font-family:var(--font-sans); font-size:1.18rem; color:#fff; font-weight:800;" id="puzzle-theory-title">
+                        Porta Lògica
+                    </h3>
+                    <div class="gate-formula-box" id="puzzle-theory-formula">Y = ¬A</div>
+                    <div style="font-size:0.85rem; color:#cbd5e1; line-height:1.48;" id="puzzle-theory-html"></div>
+
+                    <div id="puzzle-realworld-box" style="display:none; margin-top:0.65rem; background:rgba(30, 58, 138, 0.28); border:1px solid #38bdf8; border-radius:8px; padding:0.65rem; box-shadow:0 0 15px rgba(56, 189, 248, 0.15);">
+                        <div style="font-size:0.72rem; font-weight:800; color:#38bdf8; text-transform:uppercase; margin-bottom:0.25rem; letter-spacing:0.05em;">
+                            🏭 Cas d'Ús Real / Aplicació d'Enginyeria Militar:
+                        </div>
+                        <div id="puzzle-realworld-text" style="font-size:0.83rem; color:#e2e8f0; line-height:1.45;"></div>
+                    </div>
+
+                    <div style="margin-top:0.35rem;">
+                        <div style="font-size:0.78rem; font-weight:800; color:#38bdf8; text-transform:uppercase; margin-bottom:0.4rem;">
+                            📊 Taula de Veritat Oficial (IN → OUT):
+                        </div>
+                        <div class="truth-table-wrap">
+                            <table class="truth-table">
+                                <thead id="puzzle-truth-thead"></thead>
+                                <tbody id="puzzle-truth-tbody"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- DRETA: RESOLUCIÓ INTERACTIVA D'ENTRADA -> SORTIDA -->
+                <div class="challenge-panel">
+                    <div>
+                        <div class="round-progress-bar" id="puzzle-progress-bar">
+                            <span style="font-size:0.78rem; font-weight:700; color:#cbd5e1;" id="puzzle-progress-title">Bypass del Xip de Seguretat:</span>
+                            <div style="display:flex; gap:0.4rem;" id="puzzle-step-pills">
+                                <span class="round-pill active" id="puzzle-step-pill-0">Fase 1</span>
+                                <span class="round-pill" id="puzzle-step-pill-1">Fase 2</span>
+                                <span class="round-pill" id="puzzle-step-pill-2">Fase 3</span>
+                            </div>
+                        </div>
+
+                        <div class="circuit-svg-stage" id="puzzle-circuit-svg-box" style="margin-top:0.85rem;">
+                            <!-- Esquema SVG del circuit renderitzat dinàmicament -->
+                        </div>
+
+                        <div class="io-solver-controls" style="margin-top:0.85rem;">
+                            <p style="font-size:0.92rem; font-weight:700; color:#f8fafc; margin-bottom:0.4rem;" id="puzzle-challenge-prompt">
+                                Calcula la sortida Y del circuit:
+                            </p>
+                            <div id="puzzle-interactive-controls"></div>
+                        </div>
+
+                        <div class="puzzle-feedback" id="puzzle-feedback-box" style="margin-top:0.75rem;"></div>
+                    </div>
+
+                    <div style="display:flex; justify-content:space-between; align-items:center; gap:0.75rem; margin-top:0.5rem; flex-wrap:wrap;">
+                        <span style="font-size:0.75rem; color:#94a3b8;">⚠️ Cada error de càlcul resta <strong>-30s</strong> d'infiltració</span>
+                        <button class="btn-transmit-signal" onclick="verifyCurrentGateStep()">
+                            ⚡ Transmetre Senyal i Validar
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ====================================================================
+         MODAL 5B: SNAKE CAIGUT / NEUTRALITZAT EN COMBAT (RESPAWN AMB PENALITZACIÓ)
+         ==================================================================== -->
+    <div class="modal-overlay no-print" id="player-down-modal">
+        <div class="modal-card death-modal-card" style="text-align:center; border-color:#dc2626; max-width: 520px; box-shadow: 0 0 40px rgba(220, 38, 38, 0.45);">
+            <div style="font-size:3.5rem; margin-bottom:0.3rem; animation: pulse 1.5s infinite;">💀</div>
+            <h2 class="modal-header-title" style="color:#ef4444; letter-spacing: 0.08em; font-size:1.45rem;">SNAKE NEUTRALITZAT EN COMBAT!</h2>
+            <p class="modal-subtitle" style="color:#fca5a5; font-size: 0.92rem; margin-bottom: 1rem;">
+                La teva vitalitat (LIFE) ha arribat al 0% per foc enemic o descàrregues de seguretat.
+            </p>
+
+            <div class="death-penalty-box" style="background: rgba(185, 28, 28, 0.15); border: 1px solid #ef4444; border-radius: 10px; padding: 1.1rem; margin-bottom: 1.25rem; text-align: left;">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.75rem; border-bottom:1px solid rgba(239,68,68,0.3); padding-bottom:0.5rem;">
+                    <span style="color:#f87171; font-weight:700; font-size:0.95rem;">⏱️ Penalització de Temps:</span>
+                    <strong style="color:#fca5a5; font-size:1.15rem; font-family:'JetBrains Mono', monospace;" id="death-modal-penalty">-45 segons</strong>
+                </div>
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.75rem;">
+                    <span style="color:#94a3b8; font-size:0.9rem;">⏳ Temps restant d'infiltració:</span>
+                    <strong style="color:#fde047; font-size:1.3rem; font-family:'JetBrains Mono', monospace;" id="death-modal-timer-left">45:00</strong>
+                </div>
+                <div style="font-size:0.84rem; color:#cbd5e1; line-height: 1.45; background: rgba(15, 23, 42, 0.6); padding: 0.75rem; border-radius: 6px; border-left: 3px solid #38bdf8;">
+                    🩺 <strong>Protocol d'Urgència FOXHOUND:</strong> L'equip mèdic t'ha estabilitzat la vitalitat (<strong>LIFE 100%</strong>). El sector s'ha reiniciat completament: <strong>has de tornar a recollir tots els discs PAL</strong> i tindràs de nou disponible l'opció de <strong>hackejar els terminals PC</strong>. Reapareixeràs a la zona d'entrada segura <strong>[S]</strong> amb el sistema d'alerta restablert a <strong>NORMAL</strong>.
+                </div>
+            </div>
+
+            <button class="btn-primary-gold" id="btn-player-down-ok" onclick="handleRespawnOk()" style="width:100%; font-size:1.05rem; padding:0.95rem 1.5rem; justify-content:center; box-shadow: 0 0 20px rgba(239, 68, 68, 0.35);">
+                🐍 OK · Reaparèixer i Continuar Missió
+            </button>
+        </div>
+    </div>
+
+    <!-- ====================================================================
+         MODAL 5C: AUDITORIA I DEBUG D'ÍTEMS I QUADRÍCULES (FASE DEBUG)
+         ==================================================================== -->
+    <div class="modal-overlay no-print" id="debug-modal">
+        <div class="modal-card debug-modal-card" style="max-width: 960px; width: 95vw; max-height: 90vh; display: flex; flex-direction: column;">
+            <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom: 0.75rem; border-bottom: 1px solid #334155; padding-bottom: 0.65rem;">
+                <div>
+                    <h2 class="modal-header-title" style="color:#38bdf8; font-size:1.35rem; display:flex; align-items:center; gap:0.5rem;">
+                        🛠️ AUDITORIA TÀCTICA I DIAGNÒSTIC (FASE DEBUG)
+                    </h2>
+                    <p class="modal-subtitle" style="margin-bottom:0; font-size:0.85rem;">
+                        Sector: <strong id="debug-modal-sector-title" style="color:#fde047;">Sector 01</strong> · Identificadors únics, coordenades de quadrícula <code style="color:#38bdf8;">[C00..16:R00..16]</code> i estat en viu per detectar fallades.
+                    </p>
+                </div>
+                <button class="btn-hud" onclick="closeDebugModal()" style="padding:0.4rem 0.8rem; font-size:1.1rem;" title="Tancar">✖</button>
+            </div>
+
+            <!-- Snake Live Status Banner -->
+            <div class="debug-snake-status-strip">
+                <div>📍 <strong>Posició Snake:</strong> <span id="debug-snake-pos" class="debug-pos-pill">C01:R15</span></div>
+                <div>🧭 <strong>Àrea:</strong> <span id="debug-snake-area" style="color:#94a3b8;">ÀREA-SO [Sud-Oest · Inserció]</span></div>
+                <div>❤️ <strong>Vida:</strong> <span id="debug-snake-life" style="color:#22c55e; font-weight:700;">100%</span></div>
+                <div>🚨 <strong>Alerta:</strong> <span id="debug-snake-alert" style="color:#38bdf8; font-weight:700;">NORMAL</span></div>
+            </div>
+
+            <!-- Toolbar / Filters & Actions -->
+            <div class="debug-toolbar">
+                <div class="debug-filter-group" id="debug-filter-container">
+                    <span style="font-size:0.75rem; color:#94a3b8; font-weight:700; margin-right:0.25rem;">FILTRE:</span>
+                    <button class="debug-filter-btn active" onclick="setDebugFilter('ALL', this)">Tots</button>
+                    <button class="debug-filter-btn" onclick="setDebugFilter('PAL_DISC', this)">Discs PAL</button>
+                    <button class="debug-filter-btn" onclick="setDebugFilter('GUARD', this)">Sentinelles</button>
+                    <button class="debug-filter-btn" onclick="setDebugFilter('CCTV', this)">CCTV</button>
+                    <button class="debug-filter-btn" onclick="setDebugFilter('PC_TERMINAL', this)">Terminals PC</button>
+                    <button class="debug-filter-btn" onclick="setDebugFilter('INTERACTIVE', this)">Portes/Làsers/Polsadors</button>
+                    <button class="debug-filter-btn" onclick="setDebugFilter('FURNITURE', this)">Mobiliari</button>
+                </div>
+                <div class="debug-action-group">
+                    <button class="btn-hud btn-hud-gold" onclick="toggle3DDebugOverlay()" id="btn-toggle-3d-overlay" style="padding:0.35rem 0.75rem; font-size:0.78rem;">
+                        👁️ Rètols 3D: <span id="debug-3d-overlay-state">ACTIUS</span>
+                    </button>
+                    <button class="btn-hud" onclick="copyDebugManifestToClipboard()" style="padding:0.35rem 0.75rem; font-size:0.78rem;" title="Copiar Taula en Markdown per enganxar al xat">
+                        📋 Copiar Taula (Markdown)
+                    </button>
+                </div>
+            </div>
+
+            <!-- Scrollable Table -->
+            <div class="debug-table-container">
+                <table class="debug-table">
+                    <thead>
+                        <tr>
+                            <th style="width:110px;">ID Únic</th>
+                            <th>Element / Tipus</th>
+                            <th style="width:105px;">Quadrícula</th>
+                            <th>Àrea del Sector</th>
+                            <th>Estat Actual en Viu</th>
+                            <th style="width:115px; text-align:center;">Acció Ràpida</th>
+                        </tr>
+                    </thead>
+                    <tbody id="debug-table-body">
+                        <!-- Populated dynamically -->
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Footer -->
+            <div style="margin-top: 0.75rem; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem;">
+                <div style="font-size:0.75rem; color:#64748b;">
+                    💡 Prem <strong>F2</strong> per obrir/tancar aquest panell. Fes servir el botó <strong>⚡ Teleportar</strong> per provar qualsevol element sense haver de caminar.
+                </div>
+                <button class="btn-primary-gold" onclick="closeDebugModal()" style="padding:0.5rem 1.25rem; font-size:0.88rem;">
+                    🐍 Tornar a la Missió [F2 / ESC]
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ====================================================================
+         MODAL 6: PANTALLA DE DERROTA (TEMPS EXHAURIT)
+         ==================================================================== -->
+    <div class="modal-overlay no-print" id="gameover-modal">
+        <div class="modal-card" style="text-align:center; border-color:#ef4444;">
+            <div style="font-size:3.6rem; margin-bottom:0.4rem;">💥</div>
+            <h2 class="modal-header-title" style="color:#f87171;">MISSIÓ FALLIDA · TEMPS EXHAURIT</h2>
+            <p class="modal-subtitle">
+                S'han esgotat els 50 minuts d'infiltració abans de neutralitzar els sistemes del tanc nuclear TITAN.
+            </p>
+
+            <div style="display:grid; grid-template-columns:repeat(3, 1fr); gap:0.65rem; margin-bottom:1.4rem;">
+                <div style="background:#0b0e17; border:1px solid #334155; padding:0.75rem; border-radius:8px;">
+                    <div style="font-size:0.74rem; color:#94a3b8;">Sectors Desbloquejats</div>
+                    <strong style="font-size:1.25rem; color:#f8fafc;" id="go-missions-done">0 / 10</strong>
+                </div>
+                <div style="background:#0b0e17; border:1px solid #334155; padding:0.75rem; border-radius:8px;">
+                    <div style="font-size:0.74rem; color:#94a3b8;">Encerts Lògics</div>
+                    <strong style="font-size:1.25rem; color:#34d399;" id="go-hits">0</strong>
+                </div>
+                <div style="background:#0b0e17; border:1px solid #334155; padding:0.75rem; border-radius:8px;">
+                    <div style="font-size:0.74rem; color:#94a3b8;">Errors Comesos</div>
+                    <strong style="font-size:1.25rem; color:#f87171;" id="go-errors">0</strong>
+                </div>
+            </div>
+
+            <div style="display:flex; gap:0.75rem; justify-content:center; flex-wrap:wrap;">
+                <button class="btn-hud" onclick="openDiplomaModal()" style="padding:0.75rem 1.2rem;">
+                    📄 Veure Informe Parcial FOXHOUND
+                </button>
+                <button class="btn-primary-gold" onclick="confirmResetGame()">
+                    🔄 Reiniciar Infiltració (50:00)
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ====================================================================
+         MODAL 7: DIPLOMA OFICIAL D'APROFITAMENT TECNOLÒGIC I FOXHOUND
+         ==================================================================== -->
+    <div class="modal-overlay" id="diploma-modal">
+        <div class="modal-card xl" style="background:transparent; border:none; box-shadow:none; padding:0.5rem;">
+            <div class="diploma-frame" id="printable-diploma">
+                <div style="font-size:3.2rem; margin-bottom:0.25rem;">🎖️</div>
+                <h1>DIPLOMA D'APROFITAMENT TECNOLÒGIC</h1>
+                <p style="font-size:0.92rem; color:#475569; letter-spacing:0.05em; font-weight:700; margin-bottom:1.15rem;">
+                    DEPARTAMENT DE TECNOLOGIA · ELECTRÒNICA DIGITAL I PORTES LÒGIQUES · CURS 2026
+                </p>
+
+                <div style="border: 2px solid #0284c7; border-radius:12px; padding:1.45rem; background:#f8fafc; margin-bottom:1.15rem;">
+                    <div style="display:inline-block; background:#e0f2fe; color:#0369a1; border:1px solid #7dd3fc; border-radius:999px; padding:0.3rem 1rem; font-weight:700; font-size:0.88rem; margin-bottom:0.75rem;">
+                        🐍 Operació Superada: Protocol Shadow Circuit (10 Sectors de Portes Lògiques)
+                    </div>
+
+                    <p style="font-size:1.02rem; color:#0f172a;">Es certifica oficialment que l'operador/a:</p>
+                    <div class="diploma-student-name" id="dip-student-name">Nom de l'Agent</div>
+                    <p style="font-size:0.98rem; color:#334155;">
+                        Pertanyent a la unitat/grup <strong id="dip-student-group">FOXHOUND</strong> ha completat amb èxit l'avaluació tecnològica de:
+                    </p>
+                    <h3 style="color:#0369a1; font-size:1.22rem; margin:0.65rem 0;">
+                        «Portes Lògiques Digitals (NOT, AND, OR, XOR, NAND, NOR) i Circuits Combinacionals»
+                    </h3>
+
+                    <!-- KPIs de Nota Final, Temps i Precisió -->
+                    <div class="dip-kpi-grid">
+                        <div class="dip-kpi-card" style="border-color:#0284c7; background:#f0f9ff;">
+                            <span>Qualificació Final</span>
+                            <strong id="dip-grade-value" style="font-size:1.45rem; color:#16a34a;">10.0 / 10</strong>
+                            <div id="dip-qualification-badge" style="font-size:0.74rem; font-weight:800; margin-top:0.15rem;">Rang S · BIG BOSS 🏆</div>
+                        </div>
+                        <div class="dip-kpi-card">
+                            <span>Sectors Desbloquejats</span>
+                            <strong id="dip-missions-val">10 / 10</strong>
+                            <div style="font-size:0.72rem; color:#64748b; margin-top:0.15rem;">Base Shadow Circuit</div>
+                        </div>
+                        <div class="dip-kpi-card">
+                            <span>Bypass Lògics / Errors</span>
+                            <strong id="dip-accuracy-val" style="font-size:0.98rem;">30 encerts / 0 errors</strong>
+                            <div style="font-size:0.72rem; color:#64748b; margin-top:0.15rem;">Resolució IN → OUT</div>
+                        </div>
+                        <div class="dip-kpi-card">
+                            <span>Temps Real / Restant</span>
+                            <strong id="dip-time-used" style="font-size:0.98rem;">12:40</strong>
+                            <div style="font-size:0.72rem; color:#64748b; margin-top:0.15rem;">Restant: <span id="dip-time-left">37:20</span></div>
+                        </div>
+                    </div>
+
+                    <!-- Anàlisi Pedagògica i Competencial -->
+                    <div class="dip-analysis-grid">
+                        <div class="dip-box dip-strengths-box">
+                            <h4>🟢 Punts Forts i Competències Assolides</h4>
+                            <ul id="dip-strengths-list"></ul>
+                        </div>
+                        <div class="dip-box dip-weaknesses-box">
+                            <h4>🟡 Aspectes a Millorar i Recomanacions</h4>
+                            <ul id="dip-weaknesses-list"></ul>
+                        </div>
+                    </div>
+                </div>
+
+                <div style="display:flex; justify-content:space-between; align-items:center; font-size:0.82rem; color:#64748b; padding:0 0.5rem;">
+                    <span>Segell d'Avaluació · Departament de Tecnologia</span>
+                    <span id="dip-date">Octubre de 2026</span>
+                </div>
+            </div>
+
+            <!-- Botons d'Exportació i Impressió -->
+            <div class="no-print" style="text-align:center; margin-top:1.25rem; display:flex; gap:0.75rem; justify-content:center; flex-wrap:wrap;">
+                <button class="btn-primary-gold" onclick="window.print()">
+                    🖨️ Imprimir / Descarregar Diploma en PDF (1 Full A4)
+                </button>
+                <button class="btn-hud btn-hud-gold" id="btn-download-diploma-png" onclick="downloadDiplomaPNG()" style="padding:0.85rem 1.35rem; font-size:0.95rem;">
+                    🖼️ Descarregar Diploma en Imatge (PNG)
+                </button>
+                <button class="btn-hud" onclick="document.getElementById('diploma-modal').classList.remove('active'); syncEnginePauseState();" style="padding:0.85rem 1.2rem;">
+                    🐍 Tornar a la Missió 3D
+                </button>
+                <button class="btn-hud btn-hud-danger" onclick="confirmResetGame()" style="padding:0.85rem 1.2rem;">
+                    🔄 Nova Infiltració per a un Altre Alumne/a
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ====================================================================
+         MODAL EDITOR DE NIVELLS (F4)
+         ==================================================================== -->
+    <!-- ====================================================================
+         MODAL EDITOR DE NIVELLS (F4) — ESTUDI VISUAL TÀCTIC
+         ==================================================================== -->
+    <div class="modal-overlay no-print" id="level-editor-modal" style="display:none;">
+        <div class="modal-card editor-modal-card">
+            <!-- Capçalera Principal de l'Editor -->
+            <div class="editor-header-bar">
+                <div class="editor-title-wrap">
+                    <h3 class="editor-title">
+                        <span>🛠️</span> TOR · ESTUDI D'EDICIÓ VISUAL
+                    </h3>
+                    <p class="editor-subtitle">
+                        Edita el mapa, càmeres i sentinelles fent clic directament sobre la graella 2D.
+                        <span id="editor-source-indicator" style="display:inline-block; margin-left:0.5rem; padding:0.15rem 0.5rem; border-radius:4px; font-size:0.72rem; font-weight:700;"></span>
+                    </p>
+                </div>
+
+                <!-- Botons d'Acció Ràpida -->
+                <div class="editor-quick-actions">
+                    <button class="btn-hud btn-hud-gold" onclick="editorApplyTo3DGame()" title="Aplica els canvis al joc 3D a l'instant" style="border-color:#22c55e; color:#22c55e; font-weight:800; font-size:0.85rem; padding:0.4rem 0.9rem; box-shadow:0 0 12px rgba(34, 197, 94, 0.4);">
+                        ▶️ PROVAR EN 3D
+                    </button>
+                    <button class="btn-hud btn-hud-gold" onclick="editorCopyCode()" title="Copia el paquet tàctic complet per compartir al xat" style="font-size:0.8rem; padding:0.4rem 0.75rem;">
+                        📋 COPIAR CODI
+                    </button>
+                    <button class="btn-hud" onclick="editorOpenCodeModal()" title="Obre el panell de codi per importar o exportar" style="border-color:#38bdf8; color:#38bdf8; font-size:0.8rem; padding:0.4rem 0.75rem;">
+                        📥 IMPORTAR / CODI
+                    </button>
+                    <button class="btn-hud" onclick="editorSaveToStorage()" title="Desa al navegador permanentment" style="border-color:#818cf8; color:#a5b4fc; font-size:0.8rem; padding:0.4rem 0.7rem;">
+                        💾 DESAR
+                    </button>
+                    <button class="btn-hud btn-hud-danger" onclick="editorRestoreDefaults()" title="Restaura al disseny original de fàbrica" style="font-size:0.75rem; padding:0.4rem 0.6rem;">
+                        🔄 RESTAURAR
+                    </button>
+                    <button class="modal-close-btn" onclick="closeLevelEditorModal()" title="Tancar editor">&times;</button>
+                </div>
+            </div>
+
+            <!-- Selector de sectors (1 a 10) -->
+            <div class="editor-sector-bar" id="editor-sector-tabs"></div>
+
+            <!-- Selector de Mode Principal (Mapa, Càmeres CCTV, Sentinelles) -->
+            <div class="editor-mode-nav">
+                <button class="editor-mode-btn active" id="btn-mode-map" onclick="editorSetSubTab('MAP')">
+                    🗺️ Dibuixar Mapa & Mobles
+                </button>
+                <button class="editor-mode-btn" id="btn-mode-cameras" onclick="editorSetSubTab('CAMERAS')">
+                    📹 Càmeres CCTV & Radar (<span id="editor-badge-cam-count">0</span>)
+                </button>
+                <button class="editor-mode-btn" id="btn-mode-sentinels" onclick="editorSetSubTab('SENTINELS')">
+                    💂 Sentinelles & Rutes (<span id="editor-badge-guard-count">0</span>)
+                </button>
+            </div>
+
+            <!-- Cos Principal de l'Estudi (2 Columnes: Mapa 2D a l'Esquerra + Inspector Visual a la Dreta) -->
+            <div class="editor-studio-body">
+                <!-- Columna Esquerra: Mapa 2D (STAR DE L'EDITOR) -->
+                <div class="editor-canvas-column">
+                    <!-- Barra contextual superior sobre el mapa -->
+                    <div class="editor-canvas-toolbar" id="editor-canvas-toolbar">
+                        <!-- Controls dinàmics segons mode actiu -->
+                        <div id="canvas-toolbar-map" class="canvas-toolbar-mode">
+                            <div class="editor-tool-group">
+                                <span class="editor-group-label">Eina:</span>
+                                <button class="editor-tool-btn active" id="btn-tool-paint" onclick="editorSetTool('PAINT')" title="Pintar caselles lliurement">✏️ Pintar</button>
+                                <button class="editor-tool-btn" id="btn-tool-box" onclick="editorSetTool('BOX')" title="Dibuixar caixes o habitacions senceres fent clic a dos extrems">⏹️ Caixa</button>
+                                <button class="editor-tool-btn" id="btn-tool-fill" onclick="editorSetTool('FILL')" title="Omplir àrea connectada (Cubell)">🪣 Omplir</button>
+                                <button class="editor-tool-btn" id="btn-tool-rotate" onclick="editorSetTool('ROTATE')" title="Girar orientació d'un moble fent-hi clic (Dreceres: tecla [R])">🔄 Girar [R]</button>
+                                <button class="editor-tool-btn" id="btn-tool-erase" onclick="editorSetTool('ERASE')" title="Esborrar a terra lliure (.)">🧹 Goma</button>
+                            </div>
+
+                            <div class="editor-tool-group editor-rot-group">
+                                <span class="editor-group-label">Orientació:</span>
+                                <button class="editor-rot-btn active" id="btn-rot-0" onclick="editorSetBrushRotation(0)" title="Sud (0° ↓)">↓ 0°</button>
+                                <button class="editor-rot-btn" id="btn-rot-90" onclick="editorSetBrushRotation(90)" title="Est (90° →)">→ 90°</button>
+                                <button class="editor-rot-btn" id="btn-rot-180" onclick="editorSetBrushRotation(180)" title="Nord (180° ↑)">↑ 180°</button>
+                                <button class="editor-rot-btn" id="btn-rot-270" onclick="editorSetBrushRotation(270)" title="Oest (270° ←)">← 270°</button>
+                            </div>
+                        </div>
+
+                        <div id="canvas-toolbar-cameras" class="canvas-toolbar-mode" style="display:none;">
+                            <div class="canvas-mode-banner">
+                                💡 <strong>Mode Càmeres:</strong> Clica sobre una càmara 📹 per seleccionar-la. Clica qualsevol casella per situar-la o moure-la. Clic dret per girar-la 45°.
+                            </div>
+                            <div style="display:flex; gap:0.35rem;">
+                                <button class="btn-hud" onclick="editorAddCamera()" style="border-color:#38bdf8; color:#38bdf8; font-size:0.75rem; padding:0.25rem 0.6rem;">
+                                    ➕ Nova Càmara
+                                </button>
+                                <button class="btn-hud btn-hud-danger" onclick="editorDeleteSelectedCamera()" style="font-size:0.75rem; padding:0.25rem 0.6rem;">
+                                    🗑️ Eliminar
+                                </button>
+                            </div>
+                        </div>
+
+                        <div id="canvas-toolbar-sentinels" class="canvas-toolbar-mode" style="display:none;">
+                            <div class="canvas-mode-banner">
+                                💡 <strong>Mode Sentinelles:</strong> Clica al mapa per afegir fites de patrulla en temps real (❶➔❷➔❸). Clica sobre una fita per esborrar-la.
+                            </div>
+                            <div style="display:flex; gap:0.35rem;">
+                                <button class="btn-hud" onclick="editorAddSentinel()" style="border-color:#f59e0b; color:#fde047; font-size:0.75rem; padding:0.25rem 0.6rem;">
+                                    ➕ Nou Sentinella
+                                </button>
+                                <button class="btn-hud" onclick="editorClearSentinelRoute()" style="font-size:0.75rem; padding:0.25rem 0.6rem;" title="Esborra totes les fites deixant el sentinella estàtic">
+                                    🧹 Netejar Ruta
+                                </button>
+                                <button class="btn-hud btn-hud-danger" onclick="editorDeleteSelectedSentinel()" style="font-size:0.75rem; padding:0.25rem 0.6rem;">
+                                    🗑️ Eliminar
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- El mapa 2D interactiu -->
+                    <div class="editor-grid-wrapper" id="editor-grid-container"></div>
+
+                    <!-- Barra d'estat de coordenades a sota del mapa -->
+                    <div class="editor-grid-statusbar">
+                        <div id="editor-cursor-pos" style="color:#f8fafc; font-weight:600;">
+                            📍 Coordenada: <span style="color:#38bdf8;">C00:R00</span>
+                        </div>
+                        <div id="editor-grid-dimensions" style="color:#94a3b8;">
+                            Mida: 17x17
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Columna Dreta: Inspector Visual Contextual -->
+                <div class="editor-inspector-column">
+                    <!-- INSPECTOR 1: MAPA I MOBILIARI -->
+                    <div id="editor-inspector-map" class="editor-inspector-view">
+                        <div class="editor-inspector-header">
+                            <div>
+                                <span style="font-size:0.75rem; color:#94a3b8;">Element seleccionat:</span>
+                                <div id="editor-active-tile-name" style="color:#38bdf8; font-weight:700; font-size:0.92rem;">
+                                    🧱 Mur d'acer sòlid [#]
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Cerca i Categories -->
+                        <div style="margin:0.5rem 0 0.35rem;">
+                            <input type="text" id="editor-palette-search" placeholder="🔍 Cercar 70+ mobles, portes, consoles..." oninput="editorFilterPalette(this.value)" class="editor-search-input">
+                        </div>
+                        <div class="editor-cat-pills" id="editor-cat-pills"></div>
+
+                        <!-- Graella de rajoles de la paleta -->
+                        <div class="editor-palette-scroll" id="editor-palette-container"></div>
+                    </div>
+
+                    <!-- INSPECTOR 2: CÀMERES CCTV -->
+                    <div id="editor-inspector-cameras" class="editor-inspector-view" style="display:none;">
+                        <div class="editor-inspector-header">
+                            <span style="color:#38bdf8; font-weight:700; font-size:0.9rem;">📹 Configurador Visual de Càmeres</span>
+                        </div>
+                        <div id="editor-cameras-inspector" class="editor-inspector-content"></div>
+                    </div>
+
+                    <!-- INSPECTOR 3: SENTINELLES I RUTES -->
+                    <div id="editor-inspector-sentinels" class="editor-inspector-view" style="display:none;">
+                        <div class="editor-inspector-header">
+                            <span style="color:#f59e0b; font-weight:700; font-size:0.9rem;">💂 Configurador Visual de Sentinelles</span>
+                        </div>
+                        <div id="editor-sentinels-inspector" class="editor-inspector-content"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ====================================================================
+         MODAL IMPORTAR / EXPORTAR CODI DEL NIVELL
+         ==================================================================== -->
+    <div class="modal-overlay no-print" id="editor-code-modal" style="display:none;">
+        <div class="modal-card" style="max-width:750px; width:92vw; max-height:85vh; display:flex; flex-direction:column; background:#0a0f1d; border:1px solid #38bdf8;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.75rem; border-bottom:1px solid #1e293b; padding-bottom:0.5rem;">
+                <h3 style="margin:0; color:#38bdf8; display:flex; align-items:center; gap:0.5rem;">
+                    📥 CODI TÀCTIC DEL SECTOR
+                </h3>
+                <button class="modal-close-btn" onclick="editorCloseCodeModal()">&times;</button>
+            </div>
+
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.5rem; flex-wrap:wrap; gap:0.5rem;">
+                <div style="display:flex; align-items:center; gap:0.5rem;">
+                    <label style="font-size:0.8rem; color:#cbd5e1; font-weight:600;">Format:</label>
+                    <select id="editor-code-format" onchange="editorUpdateCodeBox()" class="editor-select">
+                        <option value="json">JSON Complet (Amb càmeres, sentinelles i rotacions)</option>
+                        <option value="ascii">Matriu ASCII Simple (Només mapa)</option>
+                    </select>
+                </div>
+                <div id="editor-status-msg" class="editor-status-msg" style="display:none; margin:0; padding:0.2rem 0.5rem;"></div>
+            </div>
+
+            <textarea id="editor-code-textarea" class="editor-code-box" style="height:320px; flex:1;" placeholder="Enganxa aquí el codi en JSON o ASCII..."></textarea>
+
+            <div style="display:flex; justify-content:space-between; gap:0.5rem; margin-top:0.75rem; flex-wrap:wrap;">
+                <div style="display:flex; gap:0.5rem;">
+                    <button class="btn-hud" onclick="editorParseCodeBox()" style="border-color:#38bdf8; color:#38bdf8;">
+                        📥 Carregar Codi a l'Editor
+                    </button>
+                    <button class="btn-hud btn-hud-gold" onclick="editorCopyCode()">
+                        📋 Copiar al Portapapers
+                    </button>
+                </div>
+                <button class="btn-hud" onclick="editorCloseCodeModal()">
+                    Tancar
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Scripts locals -->
+    <script src="js/three.min.js"></script>
+    <script src="js/html2canvas.min.js"></script>
+    <script src="js/sound.js?v=20261026_1634"></script>
+    <script src="js/levels.js?v=20261026_1634"></script>
+    <script src="js/engine3d.js?v=20261026_1634"></script>
+    <script src="js/editor.js?v=20261026_1634"></script>
+    <script src="js/app.js?v=20261026_1634"></script>
+</body>
+</html>
