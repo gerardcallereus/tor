@@ -26,7 +26,8 @@ let appState = {
     errorsByMission: {},
     gameFinished: false,
     gameOverLost: false,
-    seenCodecs: {}
+    seenCodecs: {},
+    bypassDoorPuzzles: false
 };
 
 let engine3D = null;
@@ -136,6 +137,7 @@ window.addEventListener('DOMContentLoaded', () => {
         updatePerfButtonUI(engine3D.perfMode || 'CHROMEBOOK');
     }
     loadCurrentMissionInto3D(false);
+    applyDoorQuestionsMode(false);
 
     if (!appState.studentName) {
         openProfileModal();
@@ -310,7 +312,7 @@ function loadCurrentMissionInto3D(triggerBriefing = true) {
     const mission = getCurrentMission();
     currentCrystalsCollected = 0;
     currentCrystalsTotal = 0;
-    currentDoorUnlocked = false;
+    currentDoorUnlocked = !!appState.bypassDoorPuzzles;
     missionTransitionLock = false;
 
     for (const row of mission.map) {
@@ -320,12 +322,17 @@ function loadCurrentMissionInto3D(triggerBriefing = true) {
     }
 
     if (engine3D) {
+        engine3D.bypassDoorPuzzles = !!appState.bypassDoorPuzzles;
         engine3D.loadMission(mission);
+        if (appState.bypassDoorPuzzles) {
+            engine3D.setBypassDoorPuzzles(true);
+        }
         syncEnginePauseState();
     }
 
     updateMissionPanelUI();
     updateBottomStepperUI();
+    updateDoorQuestionsButtonUI();
 
     // Trigger Codec briefing call on entry if mission has one
     if (triggerBriefing && mission.codecBriefing && mission.codecBriefing.length > 0) {
@@ -349,6 +356,7 @@ function updateTopHud() {
     if (errsEl) errsEl.textContent = appState.logicErrors;
 
     updateTimerDisplay();
+    updateDoorQuestionsButtonUI();
 }
 
 function updateMissionPanelUI() {
@@ -369,17 +377,21 @@ function updateMissionPanelUI() {
     objCrystalsCount.textContent = `${currentCrystalsCollected} / ${currentCrystalsTotal}`;
     objCrystals.classList.toggle('completed', allCollected);
 
+    const isGateOpen = currentDoorUnlocked || appState.bypassDoorPuzzles;
     const objDoor = document.getElementById('obj-door-item');
     const objDoorStatus = document.getElementById('obj-door-status');
-    objDoor.classList.toggle('completed', currentDoorUnlocked);
-    objDoorStatus.textContent = currentDoorUnlocked
-        ? 'Desbloquejada! Creua-la ➔'
+    objDoor.classList.toggle('completed', isGateOpen);
+    objDoorStatus.textContent = isGateOpen
+        ? 'Oberta (Accés Lliure) 🔓'
         : (allCollected ? 'Terminal Lògic Actiu ⚡' : 'Recull els Discs PAL 🔒');
 
     const strip = document.getElementById('hud-objective-strip');
     const stripText = document.getElementById('hud-objective-text');
     if (strip && stripText) {
-        if (currentDoorUnlocked) {
+        if (appState.bypassDoorPuzzles) {
+            strip.className = 'hud-objective-strip unlocked no-print';
+            stripText.innerHTML = '🔓 <strong style="color:#34d399;">MODE PORTES OBERTES:</strong> Portes i comportes obertes sense preguntes. Escapa per la sortida [G]!';
+        } else if (currentDoorUnlocked) {
             strip.className = 'hud-objective-strip unlocked no-print';
             stripText.innerHTML = '🚪 <strong style="color:#fde047;">COMPORTA OBERTA!</strong> Escapa per la sortida [G]!';
         } else if (allCollected) {
@@ -501,7 +513,7 @@ function handleGateProximityChange(isNear, allCrystalsReady) {
     const promptBtn = document.getElementById('btn-open-gate-prompt');
     if (!promptBtn) return;
 
-    if (isNear && !currentDoorUnlocked) {
+    if (isNear && !currentDoorUnlocked && !appState.bypassDoorPuzzles) {
         promptBtn.classList.add('visible');
         if (allCrystalsReady) {
             promptBtn.innerHTML = '🔓 Piratar Terminal Lògic i Obrir Comporta [E]';
@@ -894,7 +906,7 @@ function toggleLibSimInput(gateId, inputKey) {
 // ============================================================================
 function openSubDoorPuzzleModal(subDoor) {
     if (!subDoor) return;
-    if (subDoor.logicUnlocked) {
+    if (appState.bypassDoorPuzzles || subDoor.logicUnlocked) {
         if (engine3D) engine3D.toggleSubSecurityDoor(subDoor);
         return;
     }
@@ -920,7 +932,12 @@ function openSubDoorPuzzleModal(subDoor) {
 window.openSubDoorPuzzleModal = openSubDoorPuzzleModal;
 
 function openGatePuzzleModal() {
-    if (currentDoorUnlocked) return;
+    if (currentDoorUnlocked || appState.bypassDoorPuzzles) {
+        if (engine3D && engine3D.gateInfo && !engine3D.gateInfo.isOpen) {
+            engine3D.unlockGateAnimation();
+        }
+        return;
+    }
 
     if (currentCrystalsCollected < currentCrystalsTotal) {
         const missing = currentCrystalsTotal - currentCrystalsCollected;
@@ -1474,6 +1491,58 @@ function handleRotateCameraRight() {
 function handlePlayerJump() {
     // Salt desactivat: el personatge no pot saltar per requisits de disseny
 }
+
+// ============================================================================
+// CONTROL DE PREGUNTES A LES PORTES I ACCÉS LLIURE (MENU SUPERIOR)
+// ============================================================================
+function toggleDoorQuestionsMode() {
+    appState.bypassDoorPuzzles = !appState.bypassDoorPuzzles;
+    saveState();
+    applyDoorQuestionsMode(true);
+}
+window.toggleDoorQuestionsMode = toggleDoorQuestionsMode;
+
+function applyDoorQuestionsMode(showToastNotice = false) {
+    updateDoorQuestionsButtonUI();
+    if (engine3D) {
+        engine3D.setBypassDoorPuzzles(appState.bypassDoorPuzzles);
+    }
+    if (appState.bypassDoorPuzzles) {
+        currentDoorUnlocked = true;
+        if (showToastNotice) {
+            showCastleToast('🔓 Totes les portes obertes i preguntes desactivades!');
+        }
+    } else {
+        const allCollected = currentCrystalsCollected >= currentCrystalsTotal;
+        if (!allCollected) {
+            currentDoorUnlocked = false;
+        }
+        if (showToastNotice) {
+            showCastleToast('🔐 Preguntes reactivades a les portes!');
+        }
+    }
+    updateMissionPanelUI();
+}
+window.applyDoorQuestionsMode = applyDoorQuestionsMode;
+
+function updateDoorQuestionsButtonUI() {
+    const btn = document.getElementById('btn-toggle-doors');
+    if (!btn) return;
+    if (appState.bypassDoorPuzzles) {
+        btn.innerHTML = '🔓 Portes: Totes Obertes';
+        btn.style.borderColor = '#10b981';
+        btn.style.color = '#34d399';
+        btn.style.boxShadow = '0 0 10px rgba(16, 185, 129, 0.4)';
+        btn.title = 'Totes les portes estan obertes i sense preguntes (Clica per reactivar preguntes)';
+    } else {
+        btn.innerHTML = '🚪 Portes: Amb Puzles';
+        btn.style.borderColor = '#64748b';
+        btn.style.color = '#94a3b8';
+        btn.style.boxShadow = 'none';
+        btn.title = 'Preguntes de les portes actives (Clica per desactivar preguntes i obrir totes les portes)';
+    }
+}
+window.updateDoorQuestionsButtonUI = updateDoorQuestionsButtonUI;
 
 // ============================================================================
 // SISTEMA D'AUDITORIA I DEBUG (FASE DEBUG - F2)

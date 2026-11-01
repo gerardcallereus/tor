@@ -105,6 +105,7 @@ class Castle3DEngine {
         this.nearWorkstation = null;
         this.nearDoor = null;
         this.nearElevator = null;
+        this.bypassDoorPuzzles = false;
         this.alertState = 'NORMAL';
         this.alertTimer = 0;
         this.bullets = [];
@@ -741,6 +742,7 @@ class Castle3DEngine {
     // ========================================================================
     loadMission(mission) {
         this.currentMissionData = mission;
+        this.bypassDoorPuzzles = !!(window.appState && window.appState.bypassDoorPuzzles);
         while (this.levelGroup.children.length > 0) {
             this.levelGroup.remove(this.levelGroup.children[0]);
         }
@@ -1863,10 +1865,16 @@ class Castle3DEngine {
             leafR,
             panelMesh,
             statusLight,
-            isOpen: false,
-            openProgress: 0,
-            allCrystalsReady: false
+            isOpen: !!this.bypassDoorPuzzles,
+            openProgress: this.bypassDoorPuzzles ? 1.0 : 0,
+            allCrystalsReady: !!this.bypassDoorPuzzles
         };
+
+        if (this.bypassDoorPuzzles) {
+            leafL.position.x = -0.62 - 1.05;
+            leafR.position.x = 0.62 + 1.05;
+            if (statusLight) statusLight.color.setHex(0x10b981);
+        }
 
         this.wallColliders.push({ x: wx, z: wz, half: this.tileSize * 0.45, isBox: true, isGateCollider: true });
     }
@@ -2160,10 +2168,15 @@ class Castle3DEngine {
             cx,
             rz,
             isVerticalWall,
-            isOpen: false,
-            openProgress: 0,
-            logicUnlocked: false
+            isOpen: !!this.bypassDoorPuzzles,
+            openProgress: this.bypassDoorPuzzles ? 1.0 : 0,
+            logicUnlocked: !!this.bypassDoorPuzzles
         };
+
+        if (this.bypassDoorPuzzles) {
+            doorMesh.position.y = 3.3;
+            if (ledMat) ledMat.color.setHex(0x10b981);
+        }
 
         this.subDoors.push(subDoorItem);
         const halfX = isVerticalWall ? 0.35 : this.tileSize * 0.46;
@@ -5297,6 +5310,42 @@ class Castle3DEngine {
         }
     }
 
+    setBypassDoorPuzzles(bypass) {
+        this.bypassDoorPuzzles = !!bypass;
+        if (this.subDoors && this.subDoors.length > 0) {
+            for (const sd of this.subDoors) {
+                if (this.bypassDoorPuzzles) {
+                    sd.logicUnlocked = true;
+                    sd.isOpen = true;
+                    sd.openProgress = 1.0;
+                    if (sd.doorMesh) sd.doorMesh.position.y = 3.3;
+                    if (sd.ledMat) sd.ledMat.color.setHex(0x10b981);
+                } else {
+                    sd.logicUnlocked = false;
+                    sd.isOpen = false;
+                    sd.openProgress = 0;
+                    if (sd.doorMesh) sd.doorMesh.position.y = 1.1;
+                    if (sd.ledMat) sd.ledMat.color.setHex(0xf59e0b);
+                }
+            }
+        }
+        if (this.gateInfo) {
+            if (this.bypassDoorPuzzles) {
+                this.gateInfo.isOpen = true;
+                this.gateInfo.openProgress = 1.0;
+                this.gateInfo.leafL.position.x = -0.62 - 1.05;
+                this.gateInfo.leafR.position.x = 0.62 + 1.05;
+                if (this.gateInfo.statusLight) this.gateInfo.statusLight.color.setHex(0x10b981);
+            } else {
+                this.gateInfo.isOpen = false;
+                this.gateInfo.openProgress = 0;
+                this.gateInfo.leafL.position.x = -0.62;
+                this.gateInfo.leafR.position.x = 0.62;
+                if (this.gateInfo.statusLight) this.gateInfo.statusLight.color.setHex(0xf59e0b);
+            }
+        }
+    }
+
     toggleElevator(el) {
         if (el.moving) return;
         el.targetY = el.y < 1.0 ? 2.0 : 0.0;
@@ -5543,6 +5592,10 @@ class Castle3DEngine {
         }
 
         if (this.nearDoor) {
+            if (this.bypassDoorPuzzles) {
+                this.toggleSubSecurityDoor(this.nearDoor);
+                return;
+            }
             if (this.nearDoor.assignedSwitch && !this.nearDoor.assignedSwitch.activated) {
                 if (window.showCastleToast) {
                     window.showCastleToast('🔒 Comporta bloquejada pel circuit hidràulic! Acciona el polsador de seguretat proper.');
@@ -5562,8 +5615,14 @@ class Castle3DEngine {
             return;
         }
 
-        if (this.nearGate && this.callbacks.onInteractGate) {
-            this.callbacks.onInteractGate();
+        if (this.nearGate) {
+            if (this.bypassDoorPuzzles) {
+                if (this.gateInfo && !this.gateInfo.isOpen) this.unlockGateAnimation();
+                return;
+            }
+            if (this.callbacks.onInteractGate) {
+                this.callbacks.onInteractGate();
+            }
         }
     }
 
@@ -6369,7 +6428,8 @@ class Castle3DEngine {
         // Comportes intermèdies: les ja desbloquejades es mantenen obertes i lliures!
         if (this.subDoors && this.subDoors.length > 0) {
             for (const sd of this.subDoors) {
-                if (sd.logicUnlocked) {
+                if (this.bypassDoorPuzzles || sd.logicUnlocked) {
+                    sd.logicUnlocked = true;
                     sd.isOpen = true;
                     sd.openProgress = 1.0;
                     if (sd.doorMesh) sd.doorMesh.position.y = 3.2;
@@ -6381,6 +6441,10 @@ class Castle3DEngine {
                     if (sd.ledMat) sd.ledMat.color.setHex(0xf59e0b);
                 }
             }
+        }
+
+        if (this.bypassDoorPuzzles && this.gateInfo) {
+            this.unlockGateAnimation();
         }
 
         if (window.showCastleToast) {
@@ -7089,7 +7153,7 @@ class Castle3DEngine {
         if (btnDoor) {
             if (this.nearDoor) {
                 btnDoor.style.display = 'block';
-                if (!this.nearDoor.logicUnlocked) {
+                if (!this.nearDoor.logicUnlocked && !this.bypassDoorPuzzles) {
                     btnDoor.style.background = 'linear-gradient(135deg, #b45309, #d97706)';
                     btnDoor.style.borderColor = '#fde047';
                     btnDoor.innerHTML = '🔐 Desxifrar Pany Lògic [E]';
